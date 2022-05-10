@@ -1,5 +1,5 @@
-#ifndef USE_IKFOM2_H
-#define USE_IKFOM2_H
+#ifndef USE_IKFOM_WHEEL_H
+#define USE_IKFOM_WHEEL_H
 
 #include <IKFoM_toolkit/esekfom/esekfom.hpp>
 
@@ -19,7 +19,6 @@ MTK_BUILD_MANIFOLD(state_ikfom,
 ((vect3, bg))
 ((vect3, ba))
 ((S2, grav))
-((vect3, wheel_p))
 );
 
 MTK_BUILD_MANIFOLD(input_ikfom,

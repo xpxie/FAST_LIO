@@ -5,7 +5,8 @@
 
 typedef MTK::vect<3, double> vect3;
 typedef MTK::SO3<double> SO3;
-typedef MTK::S2<double, 98090, 10000, 1> S2; 
+//typedef MTK::S2<double, 98090, 10000, 1> S2;
+typedef MTK::S2<double, 97970, 10000, 1> S2;//korea
 typedef MTK::vect<1, double> vect1;
 typedef MTK::vect<2, double> vect2;
 
@@ -23,6 +24,7 @@ MTK_BUILD_MANIFOLD(state_ikfom,
 MTK_BUILD_MANIFOLD(input_ikfom,
 ((vect3, acc))
 ((vect3, gyro))
+((vect3, wheel_m))
 );
 
 MTK_BUILD_MANIFOLD(process_noise_ikfom,
@@ -52,9 +54,11 @@ Eigen::Matrix<double, 24, 1> get_f(state_ikfom &s, const input_ikfom &in)
 	vect3 a_inertial = s.rot * (in.acc-s.ba); 
 	for(int i = 0; i < 3; i++ ){
 		res(i) = s.vel[i];
+//        res(i) = in.wheel_m[i];
 		res(i + 3) =  omega[i]; 
-		res(i + 12) = a_inertial[i] + s.grav[i]; 
+		res(i + 12) = a_inertial[i] + s.grav[i];
 	}
+//    ROS_WARN("IMU VEL:%f, %f,%f,wheel vel:%f, %f,%f",s.vel.x(),s.vel.y(),s.vel.z(),in.wheel_m[0],in.wheel_m[1],in.wheel_m[2]);
 	return res;
 }
 
@@ -71,7 +75,7 @@ Eigen::Matrix<double, 24, 23> df_dx(state_ikfom &s, const input_ikfom &in)
 	Eigen::Matrix<state_ikfom::scalar, 2, 1> vec = Eigen::Matrix<state_ikfom::scalar, 2, 1>::Zero();
 	Eigen::Matrix<state_ikfom::scalar, 3, 2> grav_matrix;
 	s.S2_Mx(grav_matrix, vec, 21);
-	cov.template block<3, 2>(12, 21) =  grav_matrix; 
+	cov.template block<3, 2>(12, 21) =  grav_matrix;
 	cov.template block<3, 3>(3, 15) = -Eigen::Matrix3d::Identity(); 
 	return cov;
 }

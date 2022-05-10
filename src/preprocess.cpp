@@ -63,7 +63,7 @@ void Preprocess::process(const sensor_msgs::PointCloud2::ConstPtr &msg, PointClo
     printf("Error LiDAR Type");
     break;
   }
-  *pcl_out = pl_surf;
+  *pcl_out = pl_surf;//处理完只取了面特征
 }
 
 void Preprocess::avia_handler(const livox_ros_driver::CustomMsg::ConstPtr &msg)
@@ -264,20 +264,24 @@ void Preprocess::velodyne_handler(const sensor_msgs::PointCloud2::ConstPtr &msg)
     pl_corn.clear();
     pl_full.clear();
 
-    pcl::PointCloud<velodyne_ros::Point> pl_orig;
-    pcl::fromROSMsg(*msg, pl_orig);
-    int plsize = pl_orig.points.size();
-    if (plsize == 0) return;
+    pcl::PointCloud<velodyne_ros::Point> pl_orig,pl_gnd;
+    pcl::fromROSMsg(*msg, pl_orig);// 会输出ROS WARN : no time no ring
+    int plsize = pl_orig.points.size()-1;
+//    ROS_WARN("POINT NUM:%d",plsize);
+    if (plsize <= 0) return;
     pl_surf.reserve(plsize);
 
-    /*** These variables only works when no point timestamps given ***/
+    /*** These variables only works when no point timestamps given 不是dense，ring默认全部是0,按点yaw角算time有误差，假定16线同时发射***/
     double omega_l = 0.361 * SCAN_RATE;       // scan angular velocity
+    double min_yaw=-1000.0;
     std::vector<bool> is_first(N_SCANS,true);
     std::vector<double> yaw_fp(N_SCANS, 0.0);      // yaw of first scan point
     std::vector<float> yaw_last(N_SCANS, 0.0);   // yaw of last scan point
     std::vector<float> time_last(N_SCANS, 0.0);  // last offset time
     /*****************************************************************/
 
+    float verticalAngle;
+    int rowIdn;
     if (pl_orig.points[plsize - 1].time > 0)
     {
       given_offset_time = true;
@@ -286,15 +290,20 @@ void Preprocess::velodyne_handler(const sensor_msgs::PointCloud2::ConstPtr &msg)
     {
       given_offset_time = false;
       double yaw_first = atan2(pl_orig.points[0].y, pl_orig.points[0].x) * 57.29578;
-      double yaw_end  = yaw_first;
-      int layer_first = pl_orig.points[0].ring;
+//      double yaw_end  = yaw_first;
+//      int layer_first = pl_orig.points[0].ring;
       for (uint i = plsize - 1; i > 0; i--)
       {
-        if (pl_orig.points[i].ring == layer_first)
-        {
-          yaw_end = atan2(pl_orig.points[i].y, pl_orig.points[i].x) * 57.29578;
-          break;
-        }
+          verticalAngle = atan2(pl_orig.points[i].z, sqrt(pl_orig.points[i].x * pl_orig.points[i].x + pl_orig.points[i].y * pl_orig.points[i].y)) * 180 / M_PI;
+          rowIdn = ((verticalAngle + 15.1) / 2);
+          if (rowIdn < 8) pl_orig.points[i].ring=rowIdn*2;
+          else pl_orig.points[i].ring=rowIdn * 2 - 15;
+//          ROS_WARN("RING IS %d",pl_orig.points[i].ring);
+//        if (pl_orig.points[i].ring == layer_first)
+//        {
+//          yaw_end = atan2(pl_orig.points[i].y, pl_orig.points[i].x) * 57.29578;
+//          break;
+//        }
       }
     }
 
@@ -331,27 +340,31 @@ void Preprocess::velodyne_handler(const sensor_msgs::PointCloud2::ConstPtr &msg)
               added_pt.curvature = 0.0;
               yaw_last[layer]=yaw_angle;
               time_last[layer]=added_pt.curvature;
+              if (min_yaw<yaw_angle) min_yaw=yaw_angle;
               continue;
           }
 
-          if (yaw_angle <= yaw_fp[layer])
+          if (yaw_angle <= min_yaw)
           {
-            added_pt.curvature = (yaw_fp[layer]-yaw_angle) / omega_l;
+            added_pt.curvature = (min_yaw-yaw_angle) / omega_l;
           }
           else
           {
-            added_pt.curvature = (yaw_fp[layer]-yaw_angle+360.0) / omega_l;
+            added_pt.curvature = (min_yaw-yaw_angle+360.0) / omega_l;
           }
 
-          if (added_pt.curvature < time_last[layer])  added_pt.curvature+=360.0/omega_l;
-
+//          if (added_pt.curvature < time_last[layer])  added_pt.curvature+=360.0/omega_l;
+//            ROS_WARN("yaw_angle:%f, point ring:%d, point time: %lf,point x:%lf, point y:%lf, point z: %lf",
+//                     yaw_angle,pl_orig.points[i].ring,added_pt.curvature,added_pt.x,added_pt.y,added_pt.z);
+//            ROS_WARN("cur yaw:%lf, err yaw: %lf",yaw_angle, yaw_angle-yaw_last[layer]);
           yaw_last[layer] = yaw_angle;
           time_last[layer]=added_pt.curvature;
         }
 
         pl_buff[layer].points.push_back(added_pt);
+        pl_full.push_back(added_pt);
       }
-
+//      ROS_WARN("Start yaw:%lf, end yaw: %lf",yaw_fp[0], yaw_last[0]);
       for (int j = 0; j < N_SCANS; j++)
       {
         PointCloudXYZI &pl = pl_buff[j];
@@ -402,6 +415,7 @@ void Preprocess::velodyne_handler(const sensor_msgs::PointCloud2::ConstPtr &msg)
               added_pt.curvature = 0.0;
               yaw_last[layer]=yaw_angle;
               time_last[layer]=added_pt.curvature;
+//              if (min_yaw<yaw_angle) min_yaw=yaw_angle;
               continue;
           }
 
@@ -419,16 +433,18 @@ void Preprocess::velodyne_handler(const sensor_msgs::PointCloud2::ConstPtr &msg)
 
           yaw_last[layer] = yaw_angle;
           time_last[layer]=added_pt.curvature;
+//            ROS_WARN("point %d, x:%f, y:%f, z:%f, yaw is %f, time is:%f",i,added_pt.x,added_pt.y,added_pt.z,yaw_angle,added_pt.curvature);
         }
 
-        if (i % point_filter_num == 0)
+        if (i % point_filter_num == 0)//输入点云预处理降采样,dense整除会用到固定几线雷达
         {
-          if(added_pt.x*added_pt.x+added_pt.y*added_pt.y+added_pt.z*added_pt.z > (blind * blind))
+          if(added_pt.x*added_pt.x+added_pt.y*added_pt.y+added_pt.z*added_pt.z > (blind * blind))//盲区4m
           {
             pl_surf.points.push_back(added_pt);
           }
         }
       }
+//      ROS_WARN("POINT NUM IS :%d",plsize);
     }
 }
 
@@ -458,7 +474,7 @@ void Preprocess::give_feature(pcl::PointCloud<PointType> &pl, vector<orgtype> &t
   uint last_i = 0; uint last_i_nex = 0;
   int last_state = 0;
   int plane_type;
-
+//plane判断 real, edge , poss
   for(uint i=head; i<plsize2; i++)
   {
     if(types[i].range < blind)
@@ -469,18 +485,18 @@ void Preprocess::give_feature(pcl::PointCloud<PointType> &pl, vector<orgtype> &t
     i2 = i;
 
     plane_type = plane_judge(pl, types, i, i_nex, curr_direct);
-    
+
     if(plane_type == 1)
     {
       for(uint j=i; j<=i_nex; j++)
-      { 
+      {
         if(j!=i && j!=i_nex)
         {
-          types[j].ftype = Real_Plane;
+          types[j].ftype = Real_Plane;//真实平面
         }
         else
         {
-          types[j].ftype = Poss_Plane;
+          types[j].ftype = Poss_Plane;// 可能平面
         }
       }
       
@@ -501,67 +517,67 @@ void Preprocess::give_feature(pcl::PointCloud<PointType> &pl, vector<orgtype> &t
       i = i_nex - 1;
       last_state = 1;
     }
-    else // if(plane_type == 2)
+    else  //if(plane_type == 2)
     {
       i = i_nex;
       last_state = 0;
     }
-    // else if(plane_type == 0)
-    // {
-    //   if(last_state == 1)
-    //   {
-    //     uint i_nex_tem;
-    //     uint j;
-    //     for(j=last_i+1; j<=last_i_nex; j++)
-    //     {
-    //       uint i_nex_tem2 = i_nex_tem;
-    //       Eigen::Vector3d curr_direct2;
-
-    //       uint ttem = plane_judge(pl, types, j, i_nex_tem, curr_direct2);
-
-    //       if(ttem != 1)
-    //       {
-    //         i_nex_tem = i_nex_tem2;
-    //         break;
-    //       }
-    //       curr_direct = curr_direct2;
-    //     }
-
-    //     if(j == last_i+1)
-    //     {
-    //       last_state = 0;
-    //     }
-    //     else
-    //     {
-    //       for(uint k=last_i_nex; k<=i_nex_tem; k++)
-    //       {
-    //         if(k != i_nex_tem)
-    //         {
-    //           types[k].ftype = Real_Plane;
-    //         }
-    //         else
-    //         {
-    //           types[k].ftype = Poss_Plane;
-    //         }
-    //       }
-    //       i = i_nex_tem-1;
-    //       i_nex = i_nex_tem;
-    //       i2 = j-1;
-    //       last_state = 1;
-    //     }
-
-    //   }
-    // }
+//     else if(plane_type == 0)
+//     {
+//       if(last_state == 1)
+//       {
+//         uint i_nex_tem;
+//         uint j;
+//         for(j=last_i+1; j<=last_i_nex; j++)
+//         {
+//           uint i_nex_tem2 = i_nex_tem;
+//           Eigen::Vector3d curr_direct2;
+//
+//           uint ttem = plane_judge(pl, types, j, i_nex_tem, curr_direct2);
+//
+//           if(ttem != 1)
+//           {
+//             i_nex_tem = i_nex_tem2;
+//             break;
+//           }
+//           curr_direct = curr_direct2;
+//         }
+//
+//         if(j == last_i+1)
+//         {
+//           last_state = 0;
+//         }
+//         else
+//         {
+//           for(uint k=last_i_nex; k<=i_nex_tem; k++)
+//           {
+//             if(k != i_nex_tem)
+//             {
+//               types[k].ftype = Real_Plane;
+//             }
+//             else
+//             {
+//               types[k].ftype = Poss_Plane;
+//             }
+//           }
+//           i = i_nex_tem-1;
+//           i_nex = i_nex_tem;
+//           i2 = j-1;
+//           last_state = 1;
+//         }
+//
+//       }
+//     }
 
     last_i = i2;
     last_i_nex = i_nex;
     last_direct = curr_direct;
   }
-
+//edge判断
   plsize2 = plsize > 3 ? plsize - 3 : 0;
   for(uint i=head+3; i<plsize2; i++)
   {
-    if(types[i].range<blind || types[i].ftype>=Real_Plane)
+    if(types[i].range<blind || types[i].ftype>=Real_Plane) //只有poss_plane和未区分的点需要判断
     {
       continue;
     }
@@ -584,7 +600,7 @@ void Preprocess::give_feature(pcl::PointCloud<PointType> &pl, vector<orgtype> &t
 
       if(types[i+m].range < blind)
       {
-        if(types[i].range > inf_bound)
+        if(types[i].range > inf_bound)//>10m
         {
           types[i].edj[j] = Nr_inf;
         }
@@ -694,6 +710,7 @@ void Preprocess::give_feature(pcl::PointCloud<PointType> &pl, vector<orgtype> &t
     }
   }
 
+  //平面和角特征分别放到对应列中
   int last_surface = -1;
   for(uint j=head; j<plsize; j++)
   {
@@ -704,13 +721,14 @@ void Preprocess::give_feature(pcl::PointCloud<PointType> &pl, vector<orgtype> &t
         last_surface = j;
       }
     
-      if(j == uint(last_surface+point_filter_num-1))
+      if(j == uint(last_surface+point_filter_num-1))//平面特征降采样
       {
         PointType ap;
         ap.x = pl[j].x;
         ap.y = pl[j].y;
         ap.z = pl[j].z;
         ap.intensity = pl[j].intensity;
+//          ap.intensity = 255;
         ap.curvature = pl[j].curvature;
         pl_surf.push_back(ap);
 
@@ -721,8 +739,10 @@ void Preprocess::give_feature(pcl::PointCloud<PointType> &pl, vector<orgtype> &t
     {
       if(types[j].ftype==Edge_Jump || types[j].ftype==Edge_Plane)
       {
-        pl_corn.push_back(pl[j]);
+//          pl[j].intensity=128;
+          pl_corn.push_back(pl[j]);
       }
+      //取降采样的平均点
       if(last_surface != -1)
       {
         PointType ap;
@@ -738,6 +758,7 @@ void Preprocess::give_feature(pcl::PointCloud<PointType> &pl, vector<orgtype> &t
         ap.y /= (j-last_surface);
         ap.z /= (j-last_surface);
         ap.intensity /= (j-last_surface);
+//          ap.intensity =255;
         ap.curvature /= (j-last_surface);
         pl_surf.push_back(ap);
       }
@@ -746,10 +767,10 @@ void Preprocess::give_feature(pcl::PointCloud<PointType> &pl, vector<orgtype> &t
   }
 }
 
-void Preprocess::pub_func(PointCloudXYZI &pl, const ros::Time &ct)
+void Preprocess::pub_func(PointCloudXYZI &pl, sensor_msgs::PointCloud2 output, const ros::Time &ct)
 {
   pl.height = 1; pl.width = pl.size();
-  sensor_msgs::PointCloud2 output;
+//  sensor_msgs::PointCloud2 output;
   pcl::toROSMsg(pl, output);
   output.header.frame_id = "livox";
   output.header.stamp = ct;
@@ -804,7 +825,7 @@ int Preprocess::plane_judge(const PointCloudXYZI &pl, vector<orgtype> &types, ui
     v1[0] = pl[j].x - pl[i_cur].x;
     v1[1] = pl[j].y - pl[i_cur].y;
     v1[2] = pl[j].z - pl[i_cur].z;
-
+//法向量，起点到终点，起点到当前点
     v2[0] = v1[1]*vz - vy*v1[2];
     v2[1] = v1[2]*vx - v1[0]*vz;
     v2[2] = v1[0]*vy - vx*v1[1];

@@ -6,6 +6,7 @@
 #include <pcl/point_types.h>
 #include <pcl/point_cloud.h>
 #include <fast_lio/Pose6D.h>
+#include <fast_lio/altimeter.h>
 #include <sensor_msgs/Imu.h>
 #include <nav_msgs/Odometry.h>
 #include <tf/transform_broadcaster.h>
@@ -17,7 +18,8 @@ using namespace Eigen;
 #define USE_IKFOM
 
 #define PI_M (3.14159265358)
-#define G_m_s2 (9.81)         // Gravaty const in GuangDong/China
+//#define G_m_s2 (9.81)         // Gravaty const in GuangDong/China
+#define G_m_s2 (9.797)          //Gravaty const in Korea
 #define DIM_STATE (18)        // Dimension of states (Let Dim(SO(3)) = 3)
 #define DIM_PROC_N (12)       // Dimension of process noise (Let Dim(SO(3)) = 3)
 #define CUBE_LEN  (6.0)
@@ -63,6 +65,8 @@ struct MeasureGroup     // Lidar data and imu dates for the curent process
     double lidar_end_time;
     PointCloudXYZI::Ptr lidar;
     deque<sensor_msgs::Imu::ConstPtr> imu;
+    deque<nav_msgs::Odometry::ConstPtr> wheel;
+    deque<fast_lio::altimeter::ConstPtr> altimeter;
 };
 
 struct StatesGroup

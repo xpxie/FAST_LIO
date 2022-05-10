@@ -22,8 +22,8 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "(x86)|(X86)|(amd64)|(AMD64)" )
   message("Processer number:  ${N}")
   if(N GREATER 4)
     add_definitions(-DMP_EN)
-    add_definitions(-DMP_PROC_NUM=3)
-    message("core for MP: 3")
+    add_definitions(-DMP_PROC_NUM=5)
+    message("core for MP: 5")
   elseif(N GREATER 3)
     add_definitions(-DMP_EN)
     add_definitions(-DMP_PROC_NUM=2)
@@ -43,18 +43,19 @@ find_package(PythonLibs REQUIRED)
 find_path(MATPLOTLIB_CPP_INCLUDE_DIRS "matplotlibcpp.h")
 
 find_package(catkin REQUIRED COMPONENTS
-  geometry_msgs
-  nav_msgs
-  sensor_msgs
-  roscpp
-  rospy
-  std_msgs
-  pcl_ros
-  tf
-  livox_ros_driver
-  message_generation
-  eigen_conversions
-)
+        geometry_msgs
+        nav_msgs
+        sensor_msgs
+        roscpp
+        rospy
+        std_msgs
+        pcl_ros
+        tf
+        livox_ros_driver
+        message_generation
+        message_filters
+        eigen_conversions
+        )
 
 find_package(Eigen3 REQUIRED)
 find_package(PCL 1.8 REQUIRED)
@@ -62,26 +63,28 @@ find_package(PCL 1.8 REQUIRED)
 message(Eigen: ${EIGEN3_INCLUDE_DIR})
 
 include_directories(
-	${catkin_INCLUDE_DIRS} 
-  ${EIGEN3_INCLUDE_DIR}
-  ${PCL_INCLUDE_DIRS}
-  ${PYTHON_INCLUDE_DIRS}
-  include)
+        /home/miles/ros_ws/devel/include
+        ${catkin_INCLUDE_DIRS}
+        ${EIGEN3_INCLUDE_DIR}
+        ${PCL_INCLUDE_DIRS}
+        ${PYTHON_INCLUDE_DIRS}
+        include)
 
 add_message_files(
-  FILES
-  Pose6D.msg
+        FILES
+        Pose6D.msg
+        altimeter.msg
 )
 
 generate_messages(
- DEPENDENCIES
- geometry_msgs
+        DEPENDENCIES
+        geometry_msgs
 )
 
 catkin_package(
-  CATKIN_DEPENDS geometry_msgs nav_msgs roscpp rospy std_msgs message_runtime
-  DEPENDS EIGEN3 PCL
-  INCLUDE_DIRS
+        CATKIN_DEPENDS geometry_msgs nav_msgs roscpp rospy std_msgs message_runtime
+        DEPENDS EIGEN3 PCL
+        INCLUDE_DIRS
 )
 
 add_executable(fastlio_mapping src/laserMapping.cpp include/ikd-Tree/ikd_Tree.cpp src/preprocess.cpp)
