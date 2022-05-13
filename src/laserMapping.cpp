@@ -1025,10 +1025,10 @@ void h_share_model(state_ikfom &s, esekfom::dyn_share_datastruct<double> &ekfom_
 {
     if(wheel_update_flag)
     {
-//        ROS_WARN(" update wheel msg");
-        ekfom_data.h_x = MatrixXd::Zero(6, 27);
-        ekfom_data.R = (1/wheel_cov)*MatrixXd::Identity(6, 6);
-        ekfom_data.h.resize(6);
+        ROS_WARN(" update wheel msg");
+        ekfom_data.h_x = MatrixXd::Zero(4, 27);
+        ekfom_data.R = (1/wheel_cov)*MatrixXd::Identity(4, 4);
+        ekfom_data.h.resize(4);
 
 //        const PointType &laser_p  = laserCloudOri->points[i];
 //        V3D point_this_be(laser_p.x, laser_p.y, laser_p.z);
@@ -1058,13 +1058,26 @@ void h_share_model(state_ikfom &s, esekfom::dyn_share_datastruct<double> &ekfom_
         wheel_angvel_W_crossmat<< SKEW_SYM_MATRX(wheel_angvel_W);
         wheel_velocity_E = s.rot * s.offset_R_W_I * wheel_velocity_W;
 
-        ekfom_data.h_x.block<3, 3>(0,3) << ( wheel_vel_I_crossmat* s.rot.conjugate());
+        //vel contrain
+        ekfom_data.h_x.block<3, 3>(0,3) << (wheel_vel_I_crossmat* s.rot.conjugate());
         ekfom_data.h_x.block<3, 3>(0,12) << 1*MatrixXd::Identity(3, 3);
         ekfom_data.h_x.block<3, 3>(0,24) << ( wheel_vel_W_crossmat * s.offset_R_W_I.conjugate()*s.rot.conjugate());
-
+        // rpy contrain
 //        ekfom_data.h_x.block<3, 3>(3,15) << -1*MatrixXd::Identity(3, 3);
 //        ekfom_data.h_x.block<3, 3>(3,24) << ( wheel_angvel_W_crossmat* s.offset_R_W_I.conjugate());
-//
+//        ekfom_data.h(0)= 1*(wheel_velocity_E[0]-s.vel.x());
+//        ekfom_data.h(1)= 1*(wheel_velocity_E[1]-s.vel.y());
+//        ekfom_data.h(2)= 1*(wheel_velocity_E[2]-s.vel.z());
+//        ekfom_data.h(3)= 1*(wheel_angvel_I[0]-(Measures.imu.back()->angular_velocity.x-s.bg(0)));
+//        ekfom_data.h(4)= 1*(wheel_angvel_I[1]-(Measures.imu.back()->angular_velocity.y-s.bg(1)));
+//        ekfom_data.h(5)= 1*(wheel_angvel_I[2]-(Measures.imu.back()->angular_velocity.z-s.bg(2)));
+        // yaw constrain
+        ekfom_data.h_x.block<1, 3>(3,15) << 0,0,-1;
+        ekfom_data.h_x.block<1, 3>(3,24) << ((wheel_angvel_W_crossmat* s.offset_R_W_I.conjugate()).block<1,3>(2,0));
+        ekfom_data.h(0)= 1*(wheel_velocity_E[0]-s.vel.x());
+        ekfom_data.h(1)= 1*(wheel_velocity_E[1]-s.vel.y());
+        ekfom_data.h(2)= 1*(wheel_velocity_E[2]-s.vel.z());
+        ekfom_data.h(3)= 1*(wheel_angvel_I[2]-(Measures.imu.back()->angular_velocity.z-s.bg(2)));
 
 //      rigid model
 //        M3D wheel_translation_I_crossmat;
@@ -1092,13 +1105,11 @@ void h_share_model(state_ikfom &s, esekfom::dyn_share_datastruct<double> &ekfom_
 //        ekfom_data.h_x.block<3, 3>(0,24) << (wheel_vel_W_crossmat * s.offset_R_W_I.conjugate()*s.rot.conjugate());
 
 
-        ekfom_data.h(0)= 1*(wheel_velocity_E[0]-s.vel.x());
-        ekfom_data.h(1)= 1*(wheel_velocity_E[1]-s.vel.y());
-        ekfom_data.h(2)= 1*(wheel_velocity_E[2]-s.vel.z());
-        ekfom_data.h(5)= 1*(wheel_angvel_I[2]-(Measures.imu.back()->angular_velocity.z-s.bg(2)));
+
+
 
     ROS_WARN("residul is %f",ekfom_data.h(0));
-        ROS_WARN("angvel residul is %f",ekfom_data.h(5));
+//        ROS_WARN("angvel residul is %f",ekfom_data.h(3));
     ROS_WARN("hx  A is :\n%f,%f,%f\n%f,%f,%f\n%f,%f,%f",
              ekfom_data.h_x(0,3),ekfom_data.h_x(0,4),ekfom_data.h_x(0,4),
              ekfom_data.h_x(1,3),ekfom_data.h_x(1,4),ekfom_data.h_x(1,4),

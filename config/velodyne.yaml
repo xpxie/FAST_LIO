@@ -7,7 +7,7 @@ common:
     time_sync_en: false         # ONLY turn on when external time synchronization is really not possible
 
 chassis:
-     wheel_cov: 1e-2
+     wheel_cov: 1e-3
      left_wheel_diameter: 0.623479
      right_wheel_diameter: 0.622806
      wheel_base: 1.52439
