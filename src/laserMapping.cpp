@@ -1063,7 +1063,7 @@ void h_share_model(state_ikfom &s, esekfom::dyn_share_datastruct<double> &ekfom_
         ekfom_data.h_x.block<3, 3>(0,24) << ( wheel_vel_W_crossmat * s.offset_R_W_I.conjugate()*s.rot.conjugate());
 
 //        ekfom_data.h_x.block<3, 3>(3,15) << -1*MatrixXd::Identity(3, 3);
-        ekfom_data.h_x.block<3, 3>(3,24) << ( wheel_angvel_W_crossmat* s.offset_R_W_I.conjugate());
+//        ekfom_data.h_x.block<3, 3>(3,24) << ( wheel_angvel_W_crossmat* s.offset_R_W_I.conjugate());
 //
 
 //      rigid model
