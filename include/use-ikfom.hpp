@@ -18,13 +18,16 @@ MTK_BUILD_MANIFOLD(state_ikfom,
 ((vect3, vel))
 ((vect3, bg))
 ((vect3, ba))
+((vect3, offset_T_W_I))
+((SO3, offset_R_W_I))
 ((S2, grav))
+//((vect3, chassis)) //r1,r2,base_track
 );
 
 MTK_BUILD_MANIFOLD(input_ikfom,
 ((vect3, acc))
 ((vect3, gyro))
-((vect3, wheel_m))
+//((vect3, wheel_m))
 );
 
 MTK_BUILD_MANIFOLD(process_noise_ikfom,
@@ -46,9 +49,9 @@ MTK::get_cov<process_noise_ikfom>::type process_noise_cov()
 
 //double L_offset_to_I[3] = {0.04165, 0.02326, -0.0284}; // Avia 
 //vect3 Lidar_offset_to_IMU(L_offset_to_I, 3);
-Eigen::Matrix<double, 24, 1> get_f(state_ikfom &s, const input_ikfom &in)
+Eigen::Matrix<double, 30, 1> get_f(state_ikfom &s, const input_ikfom &in)
 {
-	Eigen::Matrix<double, 24, 1> res = Eigen::Matrix<double, 24, 1>::Zero();
+	Eigen::Matrix<double, 30, 1> res = Eigen::Matrix<double, 30, 1>::Zero();
 	vect3 omega;
 	in.gyro.boxminus(omega, s.bg);
 	vect3 a_inertial = s.rot * (in.acc-s.ba); 
@@ -62,9 +65,9 @@ Eigen::Matrix<double, 24, 1> get_f(state_ikfom &s, const input_ikfom &in)
 	return res;
 }
 
-Eigen::Matrix<double, 24, 23> df_dx(state_ikfom &s, const input_ikfom &in)
+Eigen::Matrix<double, 30, 29> df_dx(state_ikfom &s, const input_ikfom &in)
 {
-	Eigen::Matrix<double, 24, 23> cov = Eigen::Matrix<double, 24, 23>::Zero();
+	Eigen::Matrix<double, 30, 29> cov = Eigen::Matrix<double, 30, 29>::Zero();
 	cov.template block<3, 3>(0, 12) = Eigen::Matrix3d::Identity();
 	vect3 acc_;
 	in.acc.boxminus(acc_, s.ba);
@@ -74,16 +77,16 @@ Eigen::Matrix<double, 24, 23> df_dx(state_ikfom &s, const input_ikfom &in)
 	cov.template block<3, 3>(12, 18) = -s.rot.toRotationMatrix();
 	Eigen::Matrix<state_ikfom::scalar, 2, 1> vec = Eigen::Matrix<state_ikfom::scalar, 2, 1>::Zero();
 	Eigen::Matrix<state_ikfom::scalar, 3, 2> grav_matrix;
-	s.S2_Mx(grav_matrix, vec, 21);
-	cov.template block<3, 2>(12, 21) =  grav_matrix;
+	s.S2_Mx(grav_matrix, vec, 27);
+	cov.template block<3, 2>(12, 27) =  grav_matrix;
 	cov.template block<3, 3>(3, 15) = -Eigen::Matrix3d::Identity(); 
 	return cov;
 }
 
 
-Eigen::Matrix<double, 24, 12> df_dw(state_ikfom &s, const input_ikfom &in)
+Eigen::Matrix<double, 30, 12> df_dw(state_ikfom &s, const input_ikfom &in)
 {
-	Eigen::Matrix<double, 24, 12> cov = Eigen::Matrix<double, 24, 12>::Zero();
+	Eigen::Matrix<double, 30, 12> cov = Eigen::Matrix<double, 30, 12>::Zero();
 	cov.template block<3, 3>(12, 3) = -s.rot.toRotationMatrix();
 	cov.template block<3, 3>(3, 0) = -Eigen::Matrix3d::Identity();
 	cov.template block<3, 3>(15, 6) = Eigen::Matrix3d::Identity();

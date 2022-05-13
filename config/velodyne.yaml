@@ -3,9 +3,19 @@ common:
     lid_r_topic:  "/ns1/velodyne_points"
     imu_topic:  "/imu/data_raw"
     wheel_topic: "/wheel_odom"
-    altimeter_topic: "/altimeter_data"
+#    altimeter_topic: "/altimeter_data"
     time_sync_en: false         # ONLY turn on when external time synchronization is really not possible
-    
+
+chassis:
+     wheel_cov: 1e-2
+     left_wheel_diameter: 0.623479
+     right_wheel_diameter: 0.622806
+     wheel_base: 1.52439
+     extrinsic_T_W: [ 0.07,0,-1.7 ]
+     extrinsic_R_W: [1,0,0,
+                      0,1,0,
+                      0,0,1]
+     
 preprocess:
     lidar_type: 2                # 1 for Livox serials LiDAR, 2 for Velodyne LiDAR, 3 for ouster LiDAR, 
     scan_line: 16

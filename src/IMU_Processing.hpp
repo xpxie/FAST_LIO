@@ -41,7 +41,7 @@ class ImuProcess
   
   void Reset();
   void Reset(double start_timestamp, const sensor_msgs::ImuConstPtr &lastimu);
-  void set_extrinsic(const V3D &transl, const M3D &rot);
+  void set_extrinsic(const V3D &transl, const M3D &rot,const V3D &transl_w,const M3D &rot_w);
   void set_extrinsic(const V3D &transl);
   void set_extrinsic(const MD(4,4) &T);
   void set_gyr_cov(const V3D &scaler);
@@ -59,10 +59,10 @@ class ImuProcess
   V3D cov_bias_gyr;
   V3D cov_bias_acc;
   double first_lidar_time;
-  V3D wheel_velocity;
-  double wheel_angvel=0;
-  double altimeter_height,altimeter_init_height=0.0;
-  bool altimeter_first_data=0;
+
+//  double wheel_angvel=0;
+//  double altimeter_height,altimeter_init_height=0.0;
+//  bool altimeter_first_data=0;
 
  private:
   void IMU_init(const MeasureGroup &meas, esekfom::esekf<state_ikfom, 12, input_ikfom> &kf_state, int &N);
@@ -71,12 +71,14 @@ class ImuProcess
   PointCloudXYZI::Ptr cur_pcl_un_;
   sensor_msgs::ImuConstPtr last_imu_;
   deque<sensor_msgs::ImuConstPtr> v_imu_;
-  nav_msgs::Odometry::ConstPtr temp_wheel;
-  fast_lio::altimeter::ConstPtr temp_altimeter;
+//  nav_msgs::Odometry::ConstPtr temp_wheel;
+//  fast_lio::altimeter::ConstPtr temp_altimeter;
   vector<Pose6D> IMUpose;
   vector<M3D>    v_rot_pcl_;
   M3D Lidar_R_wrt_IMU;
   V3D Lidar_T_wrt_IMU;
+  M3D Wheel_R_wrt_IMU;
+  V3D Wheel_T_wrt_IMU;
   V3D mean_acc;
   V3D mean_gyr;
   V3D angvel_last;
@@ -134,10 +136,12 @@ void ImuProcess::set_extrinsic(const V3D &transl)
   Lidar_R_wrt_IMU.setIdentity();
 }
 
-void ImuProcess::set_extrinsic(const V3D &transl, const M3D &rot)
+void ImuProcess::set_extrinsic(const V3D &transl, const M3D &rot, const V3D &transl_w, const M3D &rot_w)
 {
   Lidar_T_wrt_IMU = transl;
   Lidar_R_wrt_IMU = rot;
+  Wheel_T_wrt_IMU = transl_w;
+  Wheel_R_wrt_IMU = rot_w;
 }
 
 void ImuProcess::set_gyr_cov(const V3D &scaler)
@@ -202,7 +206,9 @@ void ImuProcess::IMU_init(const MeasureGroup &meas, esekfom::esekf<state_ikfom, 
   init_state.bg  = mean_gyr;
   init_state.offset_T_L_I = Lidar_T_wrt_IMU;
   init_state.offset_R_L_I = Lidar_R_wrt_IMU;
-  init_state.vel.x()=meas.wheel.front()->twist.twist.linear.x;
+  init_state.offset_T_W_I = Wheel_T_wrt_IMU;
+  init_state.offset_R_W_I = Wheel_R_wrt_IMU;
+//  init_state.vel.x()=meas.wheel.front()->twist.twist.linear.x;
   kf_state.change_x(init_state);
 
   esekfom::esekf<state_ikfom, 12, input_ikfom>::cov init_P = kf_state.get_P();
@@ -227,10 +233,10 @@ void ImuProcess::UndistortPcl(const MeasureGroup &meas, esekfom::esekf<state_ikf
   const double &pcl_beg_time = meas.lidar_beg_time;
   const double &pcl_end_time = meas.lidar_end_time;
 
-  auto v_wheel=meas.wheel;
-  auto v_altimeter=meas.altimeter;
+//  auto v_wheel=meas.wheel;
+//  auto v_altimeter=meas.altimeter;
 
-  
+
   /*** sort point clouds by offset time ***/
   pcl_out = *(meas.lidar);
   sort(pcl_out.points.begin(), pcl_out.points.end(), time_list);        //curvature曲率中储存时间戳
@@ -240,8 +246,8 @@ void ImuProcess::UndistortPcl(const MeasureGroup &meas, esekfom::esekf<state_ikf
   /*** Initialize IMU pose ***/
   state_ikfom imu_state = kf_state.get_x();
   IMUpose.clear();
-//    IMUpose.push_back(set_pose6d(0.0, acc_s_last, angvel_last, imu_state.vel, imu_state.pos, imu_state.rot.toRotationMatrix()));
-  IMUpose.push_back(set_pose6d(0.0, acc_s_last, angvel_last, wheel_velocity, imu_state.pos, imu_state.rot.toRotationMatrix()));
+  IMUpose.push_back(set_pose6d(0.0, acc_s_last, angvel_last, imu_state.vel, imu_state.pos, imu_state.rot.toRotationMatrix()));
+//  IMUpose.push_back(set_pose6d(0.0, acc_s_last, angvel_last, wheel_velocity, imu_state.pos, imu_state.rot.toRotationMatrix()));
 
   /*** forward propagation at each imu point ***/
   V3D angvel_avr, acc_avr, acc_imu, vel_imu, pos_imu;
@@ -279,32 +285,32 @@ void ImuProcess::UndistortPcl(const MeasureGroup &meas, esekfom::esekf<state_ikf
     }
 
 
-      if(!v_wheel.empty())
-      {
-          SO3 wheel_rot;
-          temp_wheel=v_wheel.front();
-          v_wheel.pop_front();
-          wheel_angvel=temp_wheel->twist.twist.angular.z;
-
-          wheel_rot.coeffs()[0]=temp_wheel->pose.pose.orientation.x;
-          wheel_rot.coeffs()[1]=temp_wheel->pose.pose.orientation.y;
-          wheel_rot.coeffs()[2]=temp_wheel->pose.pose.orientation.z;
-          wheel_rot.coeffs()[3]=temp_wheel->pose.pose.orientation.w;
-          Eigen::Vector3d temp_yaw=SO3ToEuler(wheel_rot)/180*3.1415926f;
-          Eigen::Vector3d imu_yaw=SO3ToEuler(imu_state.rot)/180*3.1415926f;
-          wheel_velocity[0]=temp_wheel->twist.twist.linear.x*cosf(temp_yaw[1])*cosf(temp_yaw[2]);
-          wheel_velocity[1]=temp_wheel->twist.twist.linear.x*cosf(temp_yaw[1])*sinf(temp_yaw[2]);
-          wheel_velocity[2]=-temp_wheel->twist.twist.linear.x*sinf(temp_yaw[1]);
-//          wheel_velocity[0]=temp_wheel->twist.twist.linear.x*cosf(imu_yaw[1])*cosf(imu_yaw[2]);
-//          wheel_velocity[1]=temp_wheel->twist.twist.linear.x*cosf(imu_yaw[1])*sinf(imu_yaw[2]);
-//          wheel_velocity[2]=-temp_wheel->twist.twist.linear.x*sinf(imu_yaw[1]);
-//          ROS_WARN("Wheel yaw is :%f",temp_yaw[2]);
-      }
+//      if(!v_wheel.empty())
+//      {
+//          SO3 wheel_rot;
+//          temp_wheel=v_wheel.front();
+//          v_wheel.pop_front();
+//          wheel_angvel=temp_wheel->twist.twist.angular.z;
+//
+//          wheel_rot.coeffs()[0]=temp_wheel->pose.pose.orientation.x;
+//          wheel_rot.coeffs()[1]=temp_wheel->pose.pose.orientation.y;
+//          wheel_rot.coeffs()[2]=temp_wheel->pose.pose.orientation.z;
+//          wheel_rot.coeffs()[3]=temp_wheel->pose.pose.orientation.w;
+//          Eigen::Vector3d temp_yaw=SO3ToEuler(wheel_rot)/180*3.1415926f;
+//          Eigen::Vector3d imu_yaw=SO3ToEuler(imu_state.rot)/180*3.1415926f;
+//          wheel_velocity[0]=temp_wheel->twist.twist.linear.x*cosf(temp_yaw[1])*cosf(temp_yaw[2]);
+//          wheel_velocity[1]=temp_wheel->twist.twist.linear.x*cosf(temp_yaw[1])*sinf(temp_yaw[2]);
+//          wheel_velocity[2]=-temp_wheel->twist.twist.linear.x*sinf(temp_yaw[1]);
+////          wheel_velocity[0]=temp_wheel->twist.twist.linear.x*cosf(imu_yaw[1])*cosf(imu_yaw[2]);
+////          wheel_velocity[1]=temp_wheel->twist.twist.linear.x*cosf(imu_yaw[1])*sinf(imu_yaw[2]);
+////          wheel_velocity[2]=-temp_wheel->twist.twist.linear.x*sinf(imu_yaw[1]);
+////          ROS_WARN("Wheel yaw is :%f",temp_yaw[2]);
+//      }
 
 //      ROS_WARN("dt is %f",dt);
     in.acc = acc_avr;
     in.gyro = angvel_avr;
-    in.wheel_m=wheel_velocity;
+//    in.wheel_m=wheel_velocity;
     Q.block<3, 3>(0, 0).diagonal() = cov_gyr;
     Q.block<3, 3>(3, 3).diagonal() = cov_acc;
     Q.block<3, 3>(6, 6).diagonal() = cov_bias_gyr;
@@ -342,8 +348,8 @@ void ImuProcess::UndistortPcl(const MeasureGroup &meas, esekfom::esekf<state_ikf
       acc_s_last[i] += imu_state.grav[i];
     }
     double &&offs_t = tail->header.stamp.toSec() - pcl_beg_time;
-//    IMUpose.push_back(set_pose6d(offs_t, acc_s_last, angvel_last, imu_state.vel, imu_state.pos, imu_state.rot.toRotationMatrix()));
-      IMUpose.push_back(set_pose6d(offs_t, acc_s_last, angvel_last, wheel_velocity, imu_state.pos, imu_state.rot.toRotationMatrix()));
+    IMUpose.push_back(set_pose6d(offs_t, acc_s_last, angvel_last, imu_state.vel, imu_state.pos, imu_state.rot.toRotationMatrix()));
+//      IMUpose.push_back(set_pose6d(offs_t, acc_s_last, angvel_last, wheel_velocity, imu_state.pos, imu_state.rot.toRotationMatrix()));
 //      ROS_WARN("IMU VEL:%f, %f,%f,wheel vel:%f, %f,%f",imu_state.vel.x(),imu_state.vel.y(),imu_state.vel.z(),wheel_velocity[0],wheel_velocity[1],wheel_velocity[2]);
   }
 
@@ -357,18 +363,18 @@ void ImuProcess::UndistortPcl(const MeasureGroup &meas, esekfom::esekf<state_ikf
   last_lidar_end_time_ = pcl_end_time;
 
 
-    if(!v_altimeter.empty())
-    {
-        if(!altimeter_first_data)
-        {
-            altimeter_init_height=v_altimeter.front()->data;
-            altimeter_first_data=1;
-        }
-        temp_altimeter=v_altimeter.front();
-        v_altimeter.pop_front();
-        altimeter_height=temp_altimeter->data-altimeter_init_height;
-//          imu_state.pos.z()=(altimeter_height+imu_state.pos.z())/2;
-    }
+//    if(!v_altimeter.empty())
+//    {
+//        if(!altimeter_first_data)
+//        {
+//            altimeter_init_height=v_altimeter.front()->data;
+//            altimeter_first_data=1;
+//        }
+//        temp_altimeter=v_altimeter.front();
+//        v_altimeter.pop_front();
+//        altimeter_height=temp_altimeter->data-altimeter_init_height;
+////          imu_state.pos.z()=(altimeter_height+imu_state.pos.z())/2;
+//    }
 //    imu_state.pos.z()=(imu_state.pos.z()+altimeter_height)/2;
   /*** undistort each lidar point (backward propagation) ***/
   if (pcl_out.points.begin() == pcl_out.points.end()) return;
